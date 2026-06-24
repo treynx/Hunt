@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Race QR App</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <header class="bg-slate-900 text-white text-center py-4 shadow-md sticky top-0 z-50">
+        <h1 class="text-xs uppercase tracking-wider text-slate-400">Race Time</h1>
+        <div id="race-clock" class="text-4xl font-mono font-bold">00:00:00</div>
+        <div id="race-status" class="text-xs text-amber-400 mt-1">Not Started</div>
+    </header>
+
+    <main class="flex-grow p-4 max-w-2xl mx-auto w-full">
+        
+        <section id="runner-view" class="space-y-4">
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4">Runner Check-In</h2>
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">First Name</label>
+                        <input type="text" id="first-name" class="w-full border rounded p-2" placeholder="Jane">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Last Name</label>
+                        <input type="text" id="last-name" class="w-full border rounded p-2" placeholder="Doe">
+                    </div>
+                </div>
+                <button id="start-scan-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition shadow">
+                    📷 Scan QR Code
+                </button>
+                <div id="reader" class="mt-4 rounded overflow-hidden" style="width: 100%;"></div>
+            </div>
+
+            <div id="clue-display" class="hidden bg-green-50 border-l-4 border-green-500 p-6 rounded-lg shadow">
+                <h3 class="font-bold text-green-800 text-lg">🎯 Waypoint Found!</h3>
+                <p id="clue-text" class="text-xl text-gray-900 my-2 font-medium"></p>
+                <p class="text-sm text-gray-500">Recorded split: <span id="split-time-text" class="font-mono font-bold"></span></p>
+            </div>
+        </section>
+
+        <section id="leaderboard-view" class="hidden space-y-4">
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">🏆 Current Standings</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr class="border-b text-slate-500 font-bold">
+                                <th class="pb-2 w-12">Rank</th>
+                                <th class="pb-2">Runner</th>
+                                <th class="pb-2 text-center">Max Waypoint</th>
+                                <th class="pb-2 text-right">Last Scan Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-table" class="divide-y text-slate-700">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="admin-view" class="hidden space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4">Race Director Controls</h2>
+                <div class="flex gap-3">
+                    <button id="admin-start-btn" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded">Start Race</button>
+                    <button id="admin-reset-btn" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded">Reset Race</button>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4">Waypoint Clue Inputs (1-8)</h2>
+                <div id="clue-inputs-container" class="space-y-3"></div>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-3">Live Split Logs (Raw Feed)</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr class="border-b text-slate-500">
+                                <th class="pb-2">Runner</th>
+                                <th class="pb-2">Waypoint</th>
+                                <th class="pb-2 text-right">Race Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-log-table" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-slate-200 p-2 flex justify-around border-t border-slate-300 text-sm sticky bottom-0">
+        <button onclick="switchView('runner')" class="font-medium text-slate-600 py-1 px-3 rounded hover:bg-slate-300">Runner Mode</button>
+        <button onclick="switchView('leaderboard')" class="font-medium text-blue-600 py-1 px-3 rounded hover:bg-slate-300">🏆 Leaderboard</button>
+        <button onclick="switchView('admin')" class="font-medium text-slate-600 py-1 px-3 rounded hover:bg-slate-300">Admin Portal</button>
+    </footer>
+
+    <script>
+        let raceStartTime = null;
+        let raceInterval = null;
+        let html5QrcodeScanner = null;
+        let allLogs = []; // Cache all scans locally to recalculate leaderboard instantly
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'RACE_STARTED') {
+                raceStartTime = data.raceStartTime;
+                startLocalClock();
+            } else if (data.type === 'RACE_RESET') {
+                resetLocalClock();
+            } else if (data.type === 'NEW_SCAN') {
+                allLogs.push(data.logEntry);
+                addLogToTable(data.logEntry);
+                renderLeaderboard();
+            }
+        };
+
+        async function initApp() {
+            const res = await fetch('/api/state');
+            const state = await res.json();
+            
+            raceStartTime = state.raceStartTime;
+            if (state.raceStatus === 'running') {
+                startLocalClock();
+            }
+            
+            buildClueInputs(state.checkpoints);
+            allLogs = state.participantLogs;
+            allLogs.forEach(addLogToTable);
+            renderLeaderboard();
+        }
+
+        function startLocalClock() {
+            document.getElementById('race-status').innerText = "🏁 RACE LIVE";
+            document.getElementById('race-status').className = "text-xs text-emerald-400 mt-1 font-bold";
+            clearInterval(raceInterval);
+            raceInterval = setInterval(() => {
+                const elapsed = Date.now() - raceStartTime;
+                document.getElementById('race-clock').innerText = new Date(elapsed).toISOString().substr(11, 8);
+            }, 250);
+        }
+
+        function resetLocalClock() {
+            clearInterval(raceInterval);
+            allLogs = [];
+            document.getElementById('race-clock').innerText = "00:00:00";
+            document.getElementById('race-status').innerText = "Not Started";
+            document.getElementById('race-status').className = "text-xs text-amber-400 mt-1";
+            document.getElementById('admin-log-table').innerHTML = '';
+            document.getElementById('leaderboard-table').innerHTML = '';
+            document.getElementById('clue-display').classList.add('hidden');
+        }
+
+        function switchView(view) {
+            ['runner-view', 'leaderboard-view', 'admin-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            document.getElementById(`${view}-view`).classList.remove('hidden');
+        }
+
+        function buildClueInputs(checkpoints) {
+            const container = document.getElementById('clue-inputs-container');
+            container.innerHTML = '';
+            Object.keys(checkpoints).forEach(id => {
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-2 border-b border-gray-100 pb-2";
+                div.innerHTML = `
+                    <span class="font-bold w-16 text-slate-600">Code ${id}:</span>
+                    <input type="text" id="clue-input-${id}" value="${checkpoints[id].clue}" class="flex-grow border rounded p-1 text-sm">
+                    <button onclick="saveClue(${id})" class="bg-slate-700 hover:bg-slate-800 text-white text-xs px-3 py-1.5 rounded">Save</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function saveClue(id) {
+            const clue = document.getElementById(`clue-input-${id}`).value;
+            await fetch('/api/admin/update-clue', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id, clue })
+            });
+            alert(`Clue for Code ${id} updated!`);
+        }
+
+        function addLogToTable(log) {
+            const tbody = document.getElementById('admin-log-table');
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50 py-2";
+            tr.innerHTML = `
+                <td class="py-2 font-medium">${log.firstName} ${log.lastName}</td>
+                <td class="py-2"><span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full font-bold">WP ${log.checkpointId}</span></td>
+                <td class="py-2 text-right font-mono font-bold">${log.time}</td>
+            `;
+            tbody.prepend(tr);
+        }
+
+        // Leaderboard Calculation Logic
+        function renderLeaderboard() {
+            const standings = {};
+
+            // Group scans by unique runner name
+            allLogs.forEach(log => {
+                const fullName = `${log.firstName} ${log.lastName}`;
+                
+                // Track their highest milestone and when they hit it
+                if (!standings[fullName] || log.checkpointId > standings[fullName].maxWaypoint) {
+                    standings[fullName] = {
+                        name: fullName,
+                        maxWaypoint: log.checkpointId,
+                        time: log.time,
+                        timestamp: log.timestamp // Tie breaker: chronological order of getting there
+                    };
+                } else if (log.checkpointId === standings[fullName].maxWaypoint && log.timestamp < standings[fullName].timestamp) {
+                    // Safety check for oldest timestamp if code is scanned multiple times
+                    standings[fullName].time = log.time;
+                    standings[fullName].timestamp = log.timestamp;
+                }
+            });
+
+            // Convert to array and sort: Highest waypoint first. If tied, fastest race time stamp wins.
+            const sortedStandings = Object.values(standings).sort((a, b) => {
+                if (b.maxWaypoint !== a.maxWaypoint) {
+                    return b.maxWaypoint - a.maxWaypoint;
+                }
+                return a.timestamp - b.timestamp; 
+            });
+
+            const tbody = document.getElementById('leaderboard-table');
+            tbody.innerHTML = '';
+
+            sortedStandings.forEach((runner, index) => {
+                const tr = document.createElement('tr');
+                tr.className = index === 0 ? "bg-amber-50 font-medium" : "hover:bg-slate-50";
+                tr.innerHTML = `
+                    <td class="py-3 font-bold pl-2">${index + 1}</td>
+                    <td class="py-3">${runner.name}</td>
+                    <td class="py-3 text-center"><span class="bg-slate-200 text-slate-800 font-bold px-2.5 py-0.5 rounded text-xs">WP ${runner.maxWaypoint}</span></td>
+                    <td class="py-3 text-right font-mono font-bold text-slate-900 pr-2">${runner.time}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // QR Scanner Execution
+        document.getElementById('start-scan-btn').addEventListener('click', () => {
+            const firstName = document.getElementById('first-name').value.trim();
+            const lastName = document.getElementById('last-name').value.trim();
+
+            if (!firstName || !lastName) {
+                alert('Please enter your First and Last name before scanning.');
+                return;
+            }
+
+            if (html5QrcodeScanner) { html5QrcodeScanner.clear(); }
+
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+            html5QrcodeScanner.render(async (decodedText) => {
+                const checkpointId = decodedText.trim();
+                html5QrcodeScanner.clear();
+
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ firstName, lastName, checkpointId })
+                });
+
+                const reply = await res.json();
+                if (res.ok) {
+                    document.getElementById('clue-text').innerText = reply.clue;
+                    document.getElementById('split-time-text').innerText = reply.time;
+                    document.getElementById('clue-display').classList.remove('hidden');
+                    document.getElementById('clue-display').scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert(reply.error || 'Scan processing failed.');
+                }
+            });
+        });
+
+        document.getElementById('admin-start-btn').addEventListener('click', () => fetch('/api/admin/start', { method: 'POST' }));
+        document.getElementById('admin-reset-btn').addEventListener('click', () => {
+            if(confirm('Reset clock and erase all logs?')) fetch('/api/admin/reset', { method: 'POST' });
+        });
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
