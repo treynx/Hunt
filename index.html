@@ -11,7 +11,6 @@
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
 
-    <!-- TOP CLOCK DISCOVERY BOARD WITH LOGO INTEGRATION -->
     <header class="bg-emerald-950 text-white text-center py-4 shadow-md sticky top-0 z-50 border-b-2 border-emerald-700 flex flex-col items-center justify-center gap-2">
         <img src="logo.png" alt="Tallgrass 200 Logo" class="h-16 md:h-20 object-contain rounded-md shadow-sm">
         
@@ -24,13 +23,11 @@
 
     <main class="flex-grow p-4 max-w-4xl mx-auto w-full">
         
-        <!-- SELF REPORTING CONTROLS -->
         <section id="runner-view" class="space-y-4">
             <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                 <h2 class="text-xl font-bold text-slate-900 mb-1">Rider Self-Report Station</h2>
                 <p class="text-xs text-slate-500 mb-4">Arrived at a town checkpoint? Enter your details below to update your tracking dot location on the master map.</p>
                 
-                <!-- STICKY ACTIVE IDENTITY BUBBLE PROFILE DISPLAY -->
                 <div id="identity-bubble" class="hidden mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex justify-between items-center">
                     <div class="flex items-center gap-2">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
@@ -39,7 +36,6 @@
                     <button onclick="clearSavedIdentity()" class="text-xs text-red-600 hover:text-red-800 font-medium underline">Change Rider</button>
                 </div>
 
-                <!-- NAME CAPTURE INPUT FIELD CONTAINER -->
                 <div id="name-fields-box" class="grid grid-cols-2 gap-3 mb-4">
                     <div>
                         <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">First Name</label>
@@ -73,9 +69,7 @@
             </div>
         </section>
 
-        <!-- MAP WINDOW LAYOUT -->
         <section id="map-view" class="hidden h-[70vh] flex flex-col md:flex-row gap-4">
-            <!-- Sidebar Roster Panel -->
             <div class="w-full md:w-72 bg-white rounded-lg shadow-sm flex flex-col h-2/5 md:h-full border border-slate-200">
                 <div class="p-3 bg-slate-900 text-white rounded-t-lg font-bold text-xs tracking-wider flex justify-between items-center border-b border-slate-700">
                     <span>🚴 LIVE FIELD ROSTER</span>
@@ -85,13 +79,11 @@
                     <div class="p-4 text-slate-400 text-center italic">Waiting for rider field data updates...</div>
                 </div>
             </div>
-            <!-- Interactive Map Body -->
             <div class="flex-grow bg-white rounded-lg shadow-sm border border-slate-200 p-1.5 h-3/5 md:h-full relative">
                 <div id="map" class="w-full h-full rounded z-0"></div>
             </div>
         </section>
 
-        <!-- LEADERBOARD TABLE -->
         <section id="leaderboard-view" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                 <h2 class="text-xl font-bold text-slate-900 mb-4">🏆 Field Standings Matrix</h2>
@@ -113,7 +105,6 @@
         </section>
     </main>
 
-    <!-- FOOTER TAB VIEW NAVIGATION -->
     <footer class="bg-white border-t border-slate-200 p-2 flex justify-around text-xs font-semibold sticky bottom-0 z-50">
         <button onclick="switchView('runner')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">📝 Self-Report</button>
         <button onclick="switchView('map')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">🗺️ Live Map</button>
@@ -128,6 +119,7 @@
         let gpxLayer = null;
         let checkpointMarkers = {};
         let globalCheckpoints = {};
+        let cpRidersMap = {}; // Tracks lists of riders at each checkpoint dynamically
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -277,7 +269,12 @@
             if(!rosterContainer) return;
             rosterContainer.innerHTML = '';
 
+            // 1. Group check-ins to map out exactly who is at which location right now
             const latestPositions = {};
+            const localCpRiders = {};
+            
+            Object.keys(globalCheckpoints).forEach(id => { localCpRiders[id] = []; });
+
             allLogs.forEach(log => {
                 const fullName = `${log.firstName} ${log.lastName}`;
                 if (!latestPositions[fullName] || log.checkpointId > latestPositions[fullName].checkpointId) {
@@ -286,109 +283,4 @@
             });
 
             const sortedRiders = Object.values(latestPositions).sort((a,b) => b.checkpointId - a.checkpointId);
-            document.getElementById('sidebar-count').innerText = `${sortedRiders.length} On Course`;
-
-            if(sortedRiders.length === 0) {
-                rosterContainer.innerHTML = '<div class="p-4 text-slate-400 text-center italic">Waiting for rider field data updates...</div>';
-                return;
-            }
-
-            sortedRiders.forEach(rider => {
-                const initials = `${rider.firstName[0] || ''}${rider.lastName[0] || ''}`.toUpperCase();
-                const cp = globalCheckpoints[rider.checkpointId];
-                
-                const card = document.createElement('div');
-                card.className = "p-3 hover:bg-slate-50 flex items-center justify-between transition cursor-pointer";
-                card.onclick = () => {
-                    if (cp && cp.lat && cp.lng) {
-                        map.setView([cp.lat, cp.lng], 12, { animate: true });
-                        checkpointMarkers[rider.checkpointId].openPopup();
-                    }
-                };
-
-                card.innerHTML = `
-                    <div class="flex items-center gap-2.5">
-                        <span class="w-7 h-7 bg-emerald-800 text-white font-mono font-bold rounded-full flex items-center justify-center text-[10px]">${initials}</span>
-                        <div>
-                            <div class="font-bold text-slate-900">${rider.firstName} ${rider.lastName}</div>
-                            <div class="text-[10px] text-slate-400 font-mono">Wall Time: ${rider.time}</div>
-                        </div>
-                    </div>
-                    <span class="bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded text-[10px] font-mono">${cp.name}</span>
-                `;
-                rosterContainer.appendChild(card);
-
-                const marker = checkpointMarkers[rider.checkpointId];
-                if (marker) {
-                    marker.setPopupContent(`<b>${cp.name} Checkpoint</b><br><span class="text-slate-500 font-mono">Mile ${cp.mile}</span><br><div class="text-xs mt-1 text-emerald-800 font-bold">Last Rider: ${rider.firstName} ${rider.lastName} (${rider.time})</div>`);
-                }
-            });
-        }
-
-        function renderLeaderboard() {
-            const standings = {};
-            allLogs.forEach(log => {
-                const fullName = `${log.firstName} ${log.lastName}`;
-                if (!standings[fullName] || log.checkpointId > standings[fullName].checkpointId) {
-                    standings[fullName] = log;
-                } else if (log.checkpointId === standings[fullName].checkpointId && log.timestamp < standings[fullName].timestamp) {
-                    standings[fullName] = log;
-                }
-            });
-
-            const sorted = Object.values(standings).sort((a,b) => {
-                if (b.mile !== a.mile) return b.mile - a.mile;
-                return a.timestamp - b.timestamp;
-            });
-
-            const tbody = document.getElementById('leaderboard-table');
-            tbody.innerHTML = '';
-            sorted.forEach((runner, index) => {
-                const tr = document.createElement('tr');
-                tr.className = index === 0 ? "bg-amber-50/70 font-medium" : "hover:bg-slate-50";
-                
-                const elapsedClock = getElapsedTimeStr(runner.timestamp);
-
-                tr.innerHTML = `
-                    <td class="py-3 pl-2 font-bold text-slate-500">${index + 1}</td>
-                    <td class="py-3 font-semibold text-slate-900">${runner.firstName} ${runner.lastName}</td>
-                    <td class="py-3 text-center font-mono font-bold text-emerald-800">Mile ${runner.mile}</td>
-                    <td class="py-3 text-center font-mono text-slate-600">${elapsedClock}</td>
-                    <td class="py-3 text-right font-mono font-bold pr-2 text-slate-950">${runner.time}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        document.getElementById('submit-report-btn').addEventListener('click', async () => {
-            const firstName = document.getElementById('first-name').value.trim();
-            const lastName = document.getElementById('last-name').value.trim();
-            const checkpointId = document.getElementById('checkpoint-selector').value;
-
-            if (!firstName || !lastName) {
-                alert('Please enter your First and Last name before submitting data.');
-                return;
-            }
-
-            localStorage.setItem('tg200_firstName', firstName);
-            localStorage.setItem('tg200_lastName', lastName);
-
-            const res = await fetch('/api/report', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ firstName, lastName, checkpointId })
-            });
-
-            const reply = await res.json();
-            if (res.ok) {
-                document.getElementById('report-success-banner').classList.remove('hidden');
-                loadSavedIdentity();
-            } else {
-                alert(reply.error || 'Failed to file your report status updates.');
-            }
-        });
-
-        window.onload = initApp;
-    </script>
-</body>
-</html>
+            document.getElementById('sidebar-count').innerText = `${sorted
