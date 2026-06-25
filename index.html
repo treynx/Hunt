@@ -15,7 +15,7 @@
     <header class="bg-emerald-950 text-white text-center py-4 shadow-md sticky top-0 z-50 border-b-2 border-emerald-700">
         <h1 class="text-xs uppercase tracking-widest text-emerald-300 font-bold">Tallgrass 200 Official Event Clock</h1>
         <div id="race-clock" class="text-4xl font-mono font-bold my-0.5">00:00:00</div>
-        <div id="race-status" class="text-xs text-emerald-400 font-medium">Tracking Live</div>
+        <div id="race-status" class="text-xs text-amber-400 font-medium">Awaiting Race Start</div>
     </header>
 
     <main class="flex-grow p-4 max-w-4xl mx-auto w-full">
@@ -59,12 +59,12 @@
             </div>
         </section>
 
-        <!-- TRACKLEADERS STYLE MAP WINDOW -->
+        <!-- MAP WINDOW LAYOUT -->
         <section id="map-view" class="hidden h-[70vh] flex flex-col md:flex-row gap-4">
             <!-- Sidebar Roster Panel -->
             <div class="w-full md:w-72 bg-white rounded-lg shadow-sm flex flex-col h-2/5 md:h-full border border-slate-200">
                 <div class="p-3 bg-slate-900 text-white rounded-t-lg font-bold text-xs tracking-wider flex justify-between items-center border-b border-slate-700">
-                    <span>🚴 TRACKLEADERS ROSTER</span>
+                    <span>🚴 LIVE FIELD ROSTER</span>
                     <span class="text-[10px] bg-emerald-800 px-2 py-0.5 rounded font-mono" id="sidebar-count">0 Active</span>
                 </div>
                 <div id="map-sidebar-roster" class="overflow-y-auto divide-y divide-slate-100 flex-grow text-xs">
@@ -97,14 +97,6 @@
                 </div>
             </div>
         </section>
-
-        <!-- ADMIN UTILS -->
-        <section id="admin-view" class="hidden space-y-4">
-            <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-                <h2 class="text-lg font-bold text-slate-900 mb-2">Race Director Actions</h2>
-                <button id="admin-reset-btn" class="bg-rose-700 hover:bg-rose-800 text-white font-bold px-4 py-2 text-xs rounded transition shadow-sm">Erase All Live Logs & Reset</button>
-            </div>
-        </section>
     </main>
 
     <!-- FOOTER TAB VIEW NAVIGATION -->
@@ -112,7 +104,6 @@
         <button onclick="switchView('runner')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">📝 Self-Report</button>
         <button onclick="switchView('map')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">🗺️ Live Map</button>
         <button onclick="switchView('leaderboard')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">🏆 Leaderboard</button>
-        <button onclick="switchView('admin')" class="text-slate-400 py-2 px-2 rounded hover:bg-slate-100 transition">Admin</button>
     </footer>
 
     <script>
@@ -131,16 +122,21 @@
             const data = JSON.parse(event.data);
             if (data.type === 'RACE_STARTED') {
                 raceStartTime = data.raceStartTime;
+                document.getElementById('race-status').innerText = "Tracking Live";
+                document.getElementById('race-status').className = "text-xs text-emerald-400 font-medium";
             } else if (data.type === 'RACE_RESET') {
+                raceStartTime = null;
                 allLogs = [];
+                document.getElementById('race-status').innerText = "Awaiting Race Start";
+                document.getElementById('race-status').className = "text-xs text-amber-400 font-medium";
                 document.getElementById('leaderboard-table').innerHTML = '';
                 document.getElementById('report-success-banner').classList.add('hidden');
-                if (map) refreshTrackleadersSidebar();
+                if (map) resetMapPopups();
             } else if (data.type === 'NEW_SCAN') {
                 allLogs.push(data.logEntry);
                 renderLeaderboard();
                 if (map !== null) {
-                    refreshTrackleadersSidebar();
+                    refreshCourseSidebar();
                     const cp = globalCheckpoints[data.logEntry.checkpointId];
                     if (cp && cp.lat && cp.lng) {
                         map.setView([cp.lat, cp.lng], map.getZoom(), { animate: true });
@@ -157,9 +153,17 @@
             globalCheckpoints = state.checkpoints;
             allLogs = state.participantLogs;
             
-            // Fire up continuous timeline clock ticking
+            if (state.raceStatus === 'running') {
+                document.getElementById('race-status').innerText = "Tracking Live";
+                document.getElementById('race-status').className = "text-xs text-emerald-400 font-medium";
+            }
+
             clearInterval(raceInterval);
             raceInterval = setInterval(() => {
+                if (!raceStartTime) {
+                    document.getElementById('race-clock').innerText = "00:00:00";
+                    return;
+                }
                 const elapsed = Date.now() - raceStartTime;
                 document.getElementById('race-clock').innerText = elapsed > 0 ? new Date(elapsed).toISOString().substr(11, 8) : "00:00:00";
             }, 500);
@@ -168,7 +172,7 @@
         }
 
         function switchView(view) {
-            ['runner-view', 'leaderboard-view', 'map-view', 'admin-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            ['runner-view', 'leaderboard-view', 'map-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
             document.getElementById(`${view}-view`).classList.remove('hidden');
             if (view === 'map') initMap();
         }
@@ -181,7 +185,6 @@
 
             map = L.map('map').setView([36.3, -96.6], 9);
             
-            // Clean Trackleaders theme
             L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
                 attribution: '&copy; OpenStreetMap &copy; CARTO'
             }).addTo(map);
@@ -196,7 +199,7 @@
                         weight: 2,
                         fillOpacity: 1
                     })
-                    .bindPopup(`<b>${cp.name} Checkpoint</b><br><span text-slate-500 font-mono>Mile ${cp.mile}</span><br><div id="popup-cp-${id}" class="text-xs mt-1 text-emerald-700 font-bold">No riders logged yet.</div>`)
+                    .bindPopup(`<b>${cp.name} Checkpoint</b><br><span class="text-slate-500 font-mono">Mile ${cp.mile}</span><br><div id="popup-cp-${id}" class="text-xs mt-1 text-emerald-700 font-bold">No riders logged yet.</div>`)
                     .addTo(map);
                     
                     checkpointMarkers[id] = marker;
@@ -206,15 +209,23 @@
             gpxLayer = new L.GPX('course.gpx', {
                 async: true,
                 marker_options: { startIconUrl: null, endIconUrl: null, shadowUrl: null },
-                polyline_options: { color: '#b91c1c', opacity: 0.8, weight: 5 } // High-vis track line
+                polyline_options: { color: '#b91c1c', opacity: 0.8, weight: 5 }
             }).on('loaded', function(e) {
                 map.fitBounds(e.target.getBounds());
             }).addTo(map);
 
-            refreshTrackleadersSidebar();
+            refreshCourseSidebar();
         }
 
-        function refreshTrackleadersSidebar() {
+        function resetMapPopups() {
+            Object.keys(checkpointMarkers).forEach(id => {
+                const cp = globalCheckpoints[id];
+                checkpointMarkers[id].setPopupContent(`<b>${cp.name} Checkpoint</b><br><span class="text-slate-500 font-mono">Mile ${cp.mile}</span><br><div class="text-xs mt-1 text-emerald-700 font-bold">No riders logged yet.</div>`);
+            });
+            refreshCourseSidebar();
+        }
+
+        function refreshCourseSidebar() {
             const rosterContainer = document.getElementById('map-sidebar-roster');
             if(!rosterContainer) return;
             rosterContainer.innerHTML = '';
@@ -231,7 +242,7 @@
             document.getElementById('sidebar-count').innerText = `${sortedRiders.length} On Course`;
 
             if(sortedRiders.length === 0) {
-                rosterContainer.innerHTML = '<div class="p-4 text-slate-400 text-center italic">No active trackers logged yet.</div>';
+                rosterContainer.innerHTML = '<div class="p-4 text-slate-400 text-center italic">Waiting for rider field data updates...</div>';
                 return;
             }
 
@@ -278,7 +289,6 @@
                 }
             });
 
-            // Sort logic: furthest mile completed first. If tied on miles, earliest timestamp wins.
             const sorted = Object.values(standings).sort((a,b) => {
                 if (b.mile !== a.mile) return b.mile - a.mile;
                 return a.timestamp - b.timestamp;
@@ -301,7 +311,6 @@
             });
         }
 
-        // SUBMIT MANUAL STATUS REPORT ENTRY
         document.getElementById('submit-report-btn').addEventListener('click', async () => {
             const firstName = document.getElementById('first-name').value.trim();
             const lastName = document.getElementById('last-name').value.trim();
@@ -324,17 +333,10 @@
                 document.getElementById('success-time').innerText = reply.time;
                 document.getElementById('report-success-banner').classList.remove('hidden');
                 
-                // Clear form names to prevent accidental double-clicks
                 document.getElementById('first-name').value = '';
                 document.getElementById('last-name').value = '';
             } else {
                 alert(reply.error || 'Failed to file your report status updates.');
-            }
-        });
-
-        document.getElementById('admin-reset-btn').addEventListener('click', () => {
-            if(confirm('Wipe out all submitted tracker timeline entries?')) {
-                fetch('/api/admin/reset', { method: 'POST' });
             }
         });
 
