@@ -55,7 +55,7 @@
 
             <div id="report-success-banner" class="hidden bg-emerald-50 border-l-4 border-emerald-600 p-4 rounded shadow-sm">
                 <h3 class="font-bold text-emerald-900 text-sm">Update Received!</h3>
-                <p class="text-xs text-slate-700 mt-1">Your position at <span id="success-location" class="font-bold"></span> has been cataloged at race timestamp <span id="success-time" class="font-mono font-bold"></span>.</p>
+                <p class="text-xs text-slate-700 mt-1">Your position at <span id="success-location" class="font-bold"></span> has been cataloged at wall time <span id="success-time" class="font-mono font-bold"></span>.</p>
             </div>
         </section>
 
@@ -89,7 +89,7 @@
                                 <th class="pb-2">Rider</th>
                                 <th class="pb-2 text-center">Farthest Town</th>
                                 <th class="pb-2 text-center">Total Miles</th>
-                                <th class="pb-2 text-right pr-2">Split Time</th>
+                                <th class="pb-2 text-right pr-2">Check-In</th>
                             </tr>
                         </thead>
                         <tbody id="leaderboard-table" class="divide-y text-slate-700 text-sm"></tbody>
@@ -137,11 +137,7 @@
                 renderLeaderboard();
                 if (map !== null) {
                     refreshCourseSidebar();
-                    const cp = globalCheckpoints[data.logEntry.checkpointId];
-                    if (cp && cp.lat && cp.lng) {
-                        map.setView([cp.lat, cp.lng], map.getZoom(), { animate: true });
-                        checkpointMarkers[data.logEntry.checkpointId].openPopup();
-                    }
+                    // Forced map panning and popup triggers removed so submission doesn't interrupt map view
                 }
             }
         };
@@ -264,7 +260,7 @@
                         <span class="w-7 h-7 bg-emerald-800 text-white font-mono font-bold rounded-full flex items-center justify-center text-[10px]">${initials}</span>
                         <div>
                             <div class="font-bold text-slate-900">${rider.firstName} ${rider.lastName}</div>
-                            <div class="text-[10px] text-slate-400 font-mono">Pace Split: ${rider.time}</div>
+                            <div class="text-[10px] text-slate-400 font-mono">Arrived: ${rider.time}</div>
                         </div>
                     </div>
                     <span class="bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded text-[10px] font-mono">${cp.name}</span>
@@ -333,8 +329,7 @@
                 document.getElementById('success-time').innerText = reply.time;
                 document.getElementById('report-success-banner').classList.remove('hidden');
                 
-                document.getElementById('first-name').value = '';
-                document.getElementById('last-name').value = '';
+                // Fields are kept populated to remember the rider for their next checkpoint town submission.
             } else {
                 alert(reply.error || 'Failed to file your report status updates.');
             }
