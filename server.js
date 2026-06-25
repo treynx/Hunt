@@ -75,12 +75,13 @@ app.post('/api/report', (req, res) => {
         return res.status(400).json({ error: 'Invalid Checkpoint Selected' });
     }
 
-    // Capture actual real-world check-in time
-    const checkInTime = new Date();
-    const formattedTime = checkInTime.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    }).toLowerCase().replace(" ", ""); // e.g. "5:34pm"
+    // Force Central Time (America/Chicago) regardless of where server host hardware is physically located
+    const now = new Date();
+    const formattedTime = now.toLocaleTimeString('en-US', {
+        timeZone: 'America/Chicago',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).toLowerCase().replace(" ", ""); // yields e.g., "5:42pm"
 
     const logEntry = {
         firstName,
