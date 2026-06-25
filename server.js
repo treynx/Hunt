@@ -75,8 +75,12 @@ app.post('/api/report', (req, res) => {
         return res.status(400).json({ error: 'Invalid Checkpoint Selected' });
     }
 
-    const elapsedMs = Date.now() - raceStartTime;
-    const formattedTime = new Date(elapsedMs).toISOString().substr(11, 8);
+    // Capture actual real-world check-in time
+    const checkInTime = new Date();
+    const formattedTime = checkInTime.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    }).toLowerCase().replace(" ", ""); // e.g. "5:34pm"
 
     const logEntry = {
         firstName,
