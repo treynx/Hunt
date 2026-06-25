@@ -26,7 +26,17 @@
                 <h2 class="text-xl font-bold text-slate-900 mb-1">Rider Self-Report Station</h2>
                 <p class="text-xs text-slate-500 mb-4">Arrived at a town checkpoint? Enter your details below to update your tracking dot location on the master map.</p>
                 
-                <div class="grid grid-cols-2 gap-3 mb-4">
+                <!-- STICKY ACTIVE IDENTITY BUBBLE PROFILE DISPLAY -->
+                <div id="identity-bubble" class="hidden mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                        <span class="text-sm font-bold text-emerald-900">Signed In As: <span id="bubble-name" class="underline"></span></span>
+                    </div>
+                    <button onclick="clearSavedIdentity()" class="text-xs text-red-600 hover:text-red-800 font-medium underline">Change Rider</button>
+                </div>
+
+                <!-- NAME CAPTURE INPUT FIELD CONTAINER -->
+                <div id="name-fields-box" class="grid grid-cols-2 gap-3 mb-4">
                     <div>
                         <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">First Name</label>
                         <input type="text" id="first-name" class="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-emerald-600 outline-none" placeholder="Jane">
@@ -55,7 +65,7 @@
 
             <div id="report-success-banner" class="hidden bg-emerald-50 border-l-4 border-emerald-600 p-4 rounded shadow-sm">
                 <h3 class="font-bold text-emerald-900 text-sm">Update Received!</h3>
-                <p class="text-xs text-slate-700 mt-1">Your position at <span id="success-location" class="font-bold"></span> has been cataloged at wall time <span id="success-time" class="font-mono font-bold"></span>.</p>
+                <p class="text-xs text-slate-700 mt-1">Your position at <span id="success-location" class="font-bold"></span> has been cataloged at Central Time <span id="success-time" class="font-mono font-bold"></span>.</p>
             </div>
         </section>
 
@@ -137,12 +147,39 @@
                 renderLeaderboard();
                 if (map !== null) {
                     refreshCourseSidebar();
-                    // Forced map panning and popup triggers removed so submission doesn't interrupt map view
                 }
             }
         };
 
+        // Local Browser Sticky Storage Logic
+        function loadSavedIdentity() {
+            const savedFirst = localStorage.getItem('tg200_firstName');
+            const savedLast = localStorage.getItem('tg200_lastName');
+            
+            if (savedFirst && savedLast) {
+                document.getElementById('first-name').value = savedFirst;
+                document.getElementById('last-name').value = savedLast;
+                document.getElementById('bubble-name').innerText = `${savedFirst} ${savedLast}`;
+                
+                // Toggle Layout visibility structures
+                document.getElementById('name-fields-box').classList.add('hidden');
+                document.getElementById('identity-bubble').classList.remove('hidden');
+            } else {
+                document.getElementById('name-fields-box').classList.remove('hidden');
+                document.getElementById('identity-bubble').classList.add('hidden');
+            }
+        }
+
+        function clearSavedIdentity() {
+            localStorage.removeItem('tg200_firstName');
+            localStorage.removeItem('tg200_lastName');
+            document.getElementById('first-name').value = '';
+            document.getElementById('last-name').value = '';
+            loadSavedIdentity();
+        }
+
         async function initApp() {
+            loadSavedIdentity();
             const res = await fetch('/api/state');
             const state = await res.json();
             raceStartTime = state.raceStartTime;
@@ -317,6 +354,10 @@
                 return;
             }
 
+            // Save entries immediately into Local Storage
+            localStorage.setItem('tg200_firstName', firstName);
+            localStorage.setItem('tg200_lastName', lastName);
+
             const res = await fetch('/api/report', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -329,7 +370,8 @@
                 document.getElementById('success-time').innerText = reply.time;
                 document.getElementById('report-success-banner').classList.remove('hidden');
                 
-                // Fields are kept populated to remember the rider for their next checkpoint town submission.
+                // Rerender layout to present profile sticky bubble
+                loadSavedIdentity();
             } else {
                 alert(reply.error || 'Failed to file your report status updates.');
             }
