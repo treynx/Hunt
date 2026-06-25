@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tallgrass 200 - Race Director Control Panel</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-md w-full bg-slate-800 p-6 rounded-xl shadow-xl border border-slate-700">
+        <h1 class="text-xl font-black tracking-wide text-white mb-1">Tallgrass 200</h1>
+        <p class="text-xs text-slate-400 mb-6 font-medium uppercase tracking-wider">Race Director Control Room</p>
+
+        <!-- Dynamic Live Feed Info Block -->
+        <div class="bg-slate-950 rounded-lg p-4 mb-6 border border-slate-800 font-mono">
+            <div class="text-xs text-slate-500 uppercase font-bold mb-1">Race Status Status</div>
+            <div id="status-text" class="text-amber-400 font-bold text-sm">Loading State Matrix...</div>
+        </div>
+
+        <div class="space-y-3">
+            <!-- Ignition Button -->
+            <button id="start-race-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition shadow-md text-sm">
+                🏁 Ignite Race Clock (Start Race Now)
+            </button>
+
+            <!-- Reset Button -->
+            <button id="reset-race-btn" class="w-full bg-rose-700 hover:bg-rose-800 text-slate-200 font-bold py-2.5 rounded-lg transition text-xs opacity-75 hover:opacity-100">
+                ⚠️ Reset Clock & Erase Participant History
+            </button>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-slate-700 text-center">
+            <a href="/" class="text-xs text-slate-400 hover:text-emerald-400 transition font-medium">&larr; Return to Public Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        async function checkStatus() {
+            const res = await fetch('/api/state');
+            const state = await res.json();
+            const statusEl = document.getElementById('status-text');
+            
+            if (state.raceStatus === 'running') {
+                const startTimeStr = new Date(state.raceStartTime).toLocaleTimeString();
+                statusEl.innerText = `🟢 RUNNING (Started at ${startTimeStr})`;
+                statusEl.className = "text-emerald-400 font-bold text-sm";
+            } else {
+                statusEl.innerText = "🛑 STOPPED / NOT STARTED YET";
+                statusEl.className = "text-amber-500 font-bold text-sm";
+            }
+        }
+
+        document.getElementById('start-race-btn').addEventListener('click', async () => {
+            if (confirm("Confirm: Are you ready to start the official Tallgrass 200 clock right now?")) {
+                const res = await fetch('/api/admin/start', { method: 'POST' });
+                if(res.ok) {
+                    alert("The race clock is officially live!");
+                    checkStatus();
+                }
+            }
+        });
+
+        document.getElementById('reset-race-btn').addEventListener('click', async () => {
+            if (confirm("WARNING: This will wipe out all user self-reports and reset the clock back to zero. Proceed?")) {
+                const res = await fetch('/api/admin/reset', { method: 'POST' });
+                if(res.ok) {
+                    alert("System state reset successfully.");
+                    checkStatus();
+                }
+            }
+        });
+
+        window.onload = checkStatus;
+    </script>
+</body>
+</html>
