@@ -15,11 +15,18 @@ let raceStartTime = null;
 let raceStatus = 'stopped'; // stopped, running
 let participantLogs = [];
 
-// Initialize 8 checkpoints with default clues
-let checkpoints = {};
-for (let i = 1; i <= 8; i++) {
-    checkpoints[i] = { clue: `Clue for waypoint ${i} goes here.` };
-}
+// Initialize 8 checkpoints with clues AND coordinates
+// Update these coordinates (lat, lng) to match your real course points
+let checkpoints = {
+    1: { clue: "Clue for waypoint 1 goes here.", lat: 36.3060, lng: -96.4638 },
+    2: { clue: "Clue for waypoint 2 goes here.", lat: 36.1256, lng: -97.0686 },
+    3: { clue: "Clue for waypoint 3 goes here.", lat: 36.1356, lng: -97.0786 },
+    4: { clue: "Clue for waypoint 4 goes here.", lat: 36.1456, lng: -97.0886 },
+    5: { clue: "Clue for waypoint 5 (Mile 50) goes here.", lat: 36.1556, lng: -97.0986 },
+    6: { clue: "Clue for waypoint 6 goes here.", lat: 36.1656, lng: -97.1086 },
+    7: { clue: "Clue for waypoint 7 goes here.", lat: 36.1756, lng: -97.1186 },
+    8: { clue: "Clue for waypoint 8 goes here.", lat: 36.1856, lng: -97.1286 }
+};
 
 // Broadcast helper for WebSockets
 function broadcast(data) {
@@ -85,11 +92,8 @@ app.post('/api/scan', (req, res) => {
     };
 
     participantLogs.push(logEntry);
-    
-    // Notify admin dashboard of new scan
     broadcast({ type: 'NEW_SCAN', logEntry });
 
-    // Return the clue to display to the runner
     res.json({ success: true, clue: checkpoints[id].clue, time: formattedTime });
 });
 
