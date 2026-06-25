@@ -6,6 +6,9 @@
     <title>Race QR App</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex flex-col">
 
@@ -66,6 +69,13 @@
             </div>
         </section>
 
+        <section id="map-view" class="hidden space-y-4">
+            <div class="bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-3 flex items-center gap-2">🗺️ Course Map</h2>
+                <div id="map" class="w-full h-96 rounded border border-slate-200 z-0"></div>
+            </div>
+        </section>
+
         <section id="admin-view" class="hidden space-y-6">
             <div class="bg-white p-6 rounded-lg shadow">
                 <h2 class="text-xl font-bold mb-4">Race Director Controls</h2>
@@ -77,8 +87,7 @@
 
             <div class="bg-white p-6 rounded-lg shadow">
                 <h2 class="text-xl font-bold mb-4">Waypoint Clue Inputs (1-8)</h2>
-                <div id="clue-inputs-container" class="space-y-3">
-                    </div>
+                <div id="clue-inputs-container" class="space-y-3"></div>
             </div>
 
             <div class="bg-white p-6 rounded-lg shadow">
@@ -92,17 +101,17 @@
                                 <th class="pb-2 text-right">Race Time</th>
                             </tr>
                         </thead>
-                        <tbody id="admin-log-table" class="divide-y">
-                            </tbody>
+                        <tbody id="admin-log-table" class="divide-y"></tbody>
                     </table>
                 </div>
             </div>
         </section>
     </main>
 
-    <footer class="bg-slate-200 p-2 flex justify-around border-t border-slate-300 text-sm sticky bottom-0">
+    <footer class="bg-slate-200 p-2 flex justify-around border-t border-slate-300 text-sm sticky bottom-0 z-50">
         <button onclick="switchView('runner')" class="font-medium text-slate-600 py-1 px-3 rounded hover:bg-slate-300">Runner Mode</button>
-        <button onclick="switchView('leaderboard')" class="font-medium text-blue-600 py-1 px-3 rounded hover:bg-slate-300">🏆 Leaderboard</button>
+        <button onclick="switchView('leaderboard')" class="font-medium text-slate-600 py-1 px-3 rounded hover:bg-slate-300">🏆 Leaderboard</button>
+        <button onclick="switchView('map')" class="font-medium text-slate-600 py-1 px-3 rounded hover:bg-slate-300">🗺️ Map</button>
         <button onclick="switchView('admin')" class="font-medium text-slate-600 py-1 px-3 rounded hover:bg-slate-300">Admin Portal</button>
     </footer>
 
@@ -111,6 +120,10 @@
         let raceInterval = null;
         let html5Qrcode = null; 
         let allLogs = []; 
+        let map = null;
+        let gpxLayer = null;
+        let checkpointMarkers = {}; 
+        let globalCheckpoints = {}; 
 
         // Connect WebSocket
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -127,6 +140,12 @@
                 allLogs.push(data.logEntry);
                 addLogToTable(data.logEntry);
                 renderLeaderboard();
+                updateMapMarkerText(data.logEntry);
+                
+                // Pop up the bubble notification over the map pin automatically
+                if (map && checkpointMarkers[data.logEntry.checkpointId]) {
+                    checkpointMarkers[data.logEntry.checkpointId].openPopup();
+                }
             }
         };
 
@@ -140,6 +159,7 @@
                 startLocalClock();
             }
             
+            globalCheckpoints = state.checkpoints; 
             buildClueInputs(state.checkpoints);
             allLogs = state.participantLogs;
             allLogs.forEach(addLogToTable);
@@ -166,12 +186,71 @@
             document.getElementById('admin-log-table').innerHTML = '';
             document.getElementById('leaderboard-table').innerHTML = '';
             document.getElementById('clue-display').classList.add('hidden');
+            // Reset map popups
+            Object.keys(checkpointMarkers).forEach(id => {
+                checkpointMarkers[id].setPopupContent(`<b>Waypoint ${id}</b><br>No runners checked in yet.`);
+            });
         }
 
         // UI View Management
         function switchView(view) {
-            ['runner-view', 'leaderboard-view', 'admin-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            ['runner-view', 'leaderboard-view', 'map-view', 'admin-view'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
             document.getElementById(`${view}-view`).classList.remove('hidden');
+
+            if (view === 'map') {
+                initMap();
+            }
+        }
+
+        // Map Setup
+        function initMap() {
+            if (map !== null) {
+                map.invalidateSize();
+                return;
+            }
+
+            map = L.map('map').setView([0, 0], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Populate Checkpoint Pins
+            Object.keys(globalCheckpoints).forEach(id => {
+                const cp = globalCheckpoints[id];
+                if (cp.lat && cp.lng) {
+                    const marker = L.marker([cp.lat, cp.lng])
+                        .bindPopup(`<b>Waypoint ${id}</b><br><span id="map-popup-cp-${id}">No runners checked in yet.</span>`)
+                        .addTo(map);
+                    checkpointMarkers[id] = marker;
+                }
+            });
+
+            // Parse GPX track
+            gpxLayer = new L.GPX('course.gpx', {
+                async: true,
+                marker_options: { startIconUrl: null, endIconUrl: null, shadowUrl: null },
+                polyline_options: { color: '#2563eb', opacity: 0.8, weight: 4, lineCap: 'round' }
+            }).on('loaded', function(e) {
+                map.fitBounds(e.target.getBounds());
+            }).addTo(map);
+
+            allLogs.forEach(updateMapMarkerText);
+        }
+
+        function updateMapMarkerText(log) {
+            const marker = checkpointMarkers[log.checkpointId];
+            if (marker) {
+                const popupElement = document.getElementById(`map-popup-cp-${log.checkpointId}`);
+                const contentString = `<b>Last Scan:</b> ${log.firstName} ${log.lastName}<br><b>Time:</b> ${log.time}`;
+                if (popupElement) {
+                    popupElement.innerHTML = contentString;
+                } else {
+                    marker.setPopupContent(`<b>Waypoint ${log.checkpointId}</b><br>${contentString}`);
+                }
+            }
         }
 
         // Build Admin Inputs for 8 waypoints
@@ -209,18 +288,14 @@
                 <td class="py-2"><span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full font-bold">WP ${log.checkpointId}</span></td>
                 <td class="py-2 text-right font-mono font-bold">${log.time}</td>
             `;
-            tbody.prepend(tr); // Newest splits at the top
+            tbody.prepend(tr);
         }
 
-        // Leaderboard Calculation Logic
+        // Leaderboard Matrix logic
         function renderLeaderboard() {
             const standings = {};
-
-            // Group scans by unique runner name
             allLogs.forEach(log => {
                 const fullName = `${log.firstName} ${log.lastName}`;
-                
-                // Track their highest milestone and when they hit it
                 if (!standings[fullName] || log.checkpointId > standings[fullName].maxWaypoint) {
                     standings[fullName] = {
                         name: fullName,
@@ -229,23 +304,18 @@
                         timestamp: log.timestamp 
                     };
                 } else if (log.checkpointId === standings[fullName].maxWaypoint && log.timestamp < standings[fullName].timestamp) {
-                    // Safety check for oldest timestamp if code scanned multiple times
                     standings[fullName].time = log.time;
                     standings[fullName].timestamp = log.timestamp;
                 }
             });
 
-            // Sort: Highest waypoint first. If tied, fastest race time stamp wins.
             const sortedStandings = Object.values(standings).sort((a, b) => {
-                if (b.maxWaypoint !== a.maxWaypoint) {
-                    return b.maxWaypoint - a.maxWaypoint;
-                }
+                if (b.maxWaypoint !== a.maxWaypoint) return b.maxWaypoint - a.maxWaypoint;
                 return a.timestamp - b.timestamp; 
             });
 
             const tbody = document.getElementById('leaderboard-table');
             tbody.innerHTML = '';
-
             sortedStandings.forEach((runner, index) => {
                 const tr = document.createElement('tr');
                 tr.className = index === 0 ? "bg-amber-50 font-medium" : "hover:bg-slate-50";
@@ -259,7 +329,7 @@
             });
         }
 
-        // CLEAN DIRECT CAMERA STREAM EXECUTION
+        // STREAMLINED CAMERA EXECUTION
         document.getElementById('start-scan-btn').addEventListener('click', async () => {
             const firstName = document.getElementById('first-name').value.trim();
             const lastName = document.getElementById('last-name').value.trim();
@@ -272,13 +342,11 @@
             const button = document.getElementById('start-scan-btn');
             const readerDiv = document.getElementById('reader');
 
-            // Toggle logic: stop camera if already running
             if (html5Qrcode && html5Qrcode.isScanning) {
                 await stopCamera();
                 return;
             }
 
-            // Adjust styles to present video viewport nicely
             button.innerText = "🛑 Stop Camera";
             button.className = "w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-4 rounded transition shadow";
             readerDiv.className = "mt-4 rounded overflow-hidden border-2 border-blue-500 bg-black aspect-video";
@@ -286,7 +354,6 @@
             html5Qrcode = new Html5Qrcode("reader");
 
             try {
-                // "environment" targets rear camera instantly, bypassing extra popups
                 await html5Qrcode.start(
                     { facingMode: "environment" }, 
                     { fps: 10, qrbox: (width, height) => ({ width: width * 0.7, height: width * 0.7 }) },
@@ -310,9 +377,7 @@
                             alert(reply.error || 'Scan processing failed.');
                         }
                     },
-                    (errorMessage) => {
-                        // Silent framework catch to keep continuous frames moving smoothly
-                    }
+                    (errorMessage) => {}
                 );
             } catch (err) {
                 alert("Camera access denied or unavailable.");
@@ -331,7 +396,6 @@
             document.getElementById('reader').innerHTML = '';
         }
 
-        // Admin Action Bindings
         document.getElementById('admin-start-btn').addEventListener('click', () => fetch('/api/admin/start', { method: 'POST' }));
         document.getElementById('admin-reset-btn').addEventListener('click', () => {
             if(confirm('Reset clock and erase all logs?')) fetch('/api/admin/reset', { method: 'POST' });
