@@ -11,6 +11,7 @@
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
 
+    <!-- TOP CLOCK DISCOVERY BOARD WITH LOGO INTEGRATION -->
     <header class="bg-emerald-950 text-white text-center py-4 shadow-md sticky top-0 z-50 border-b-2 border-emerald-700 flex flex-col items-center justify-center gap-2">
         <img src="logo.png" alt="Tallgrass 200 Logo" class="h-16 md:h-20 object-contain rounded-md shadow-sm">
         
@@ -23,11 +24,13 @@
 
     <main class="flex-grow p-4 max-w-4xl mx-auto w-full">
         
+        <!-- SELF REPORTING CONTROLS -->
         <section id="runner-view" class="space-y-4">
             <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                 <h2 class="text-xl font-bold text-slate-900 mb-1">Rider Self-Report Station</h2>
                 <p class="text-xs text-slate-500 mb-4">Arrived at a town checkpoint? Enter your details below to update your tracking dot location on the master map.</p>
                 
+                <!-- STICKY ACTIVE IDENTITY BUBBLE PROFILE DISPLAY -->
                 <div id="identity-bubble" class="hidden mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex justify-between items-center">
                     <div class="flex items-center gap-2">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
@@ -36,6 +39,7 @@
                     <button onclick="clearSavedIdentity()" class="text-xs text-red-600 hover:text-red-800 font-medium underline">Change Rider</button>
                 </div>
 
+                <!-- NAME CAPTURE INPUT FIELD CONTAINER -->
                 <div id="name-fields-box" class="grid grid-cols-2 gap-3 mb-4">
                     <div>
                         <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">First Name</label>
@@ -65,11 +69,13 @@
 
             <div id="report-success-banner" class="hidden bg-emerald-50 border-l-4 border-emerald-600 p-4 rounded shadow-sm">
                 <h3 class="font-bold text-emerald-900 text-sm">Update Received!</h3>
-                <p class="text-xs text-slate-700 mt-1">Your position at <span id="success-location" class="font-bold"></span> has been cataloged successfully.</p>
+                <p class="text-xs text-slate-700 mt-1">Your position has been cataloged successfully.</p>
             </div>
         </section>
 
+        <!-- MAP WINDOW LAYOUT -->
         <section id="map-view" class="hidden h-[70vh] flex flex-col md:flex-row gap-4">
+            <!-- Sidebar Roster Panel -->
             <div class="w-full md:w-72 bg-white rounded-lg shadow-sm flex flex-col h-2/5 md:h-full border border-slate-200">
                 <div class="p-3 bg-slate-900 text-white rounded-t-lg font-bold text-xs tracking-wider flex justify-between items-center border-b border-slate-700">
                     <span>🚴 LIVE FIELD ROSTER</span>
@@ -79,11 +85,13 @@
                     <div class="p-4 text-slate-400 text-center italic">Waiting for rider field data updates...</div>
                 </div>
             </div>
+            <!-- Interactive Map Body -->
             <div class="flex-grow bg-white rounded-lg shadow-sm border border-slate-200 p-1.5 h-3/5 md:h-full relative">
                 <div id="map" class="w-full h-full rounded z-0"></div>
             </div>
         </section>
 
+        <!-- LEADERBOARD TABLE -->
         <section id="leaderboard-view" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                 <h2 class="text-xl font-bold text-slate-900 mb-4">🏆 Field Standings Matrix</h2>
@@ -105,6 +113,7 @@
         </section>
     </main>
 
+    <!-- FOOTER TAB VIEW NAVIGATION -->
     <footer class="bg-white border-t border-slate-200 p-2 flex justify-around text-xs font-semibold sticky bottom-0 z-50">
         <button onclick="switchView('runner')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">📝 Self-Report</button>
         <button onclick="switchView('map')" class="text-slate-600 py-2 px-4 rounded hover:bg-slate-100 transition">🗺️ Live Map</button>
@@ -138,7 +147,6 @@
                 document.getElementById('report-success-banner').classList.add('hidden');
                 if (map) resetMapPopups();
             } else if (data.type === 'NEW_SCAN') {
-                // FIXED: Explicitly cache entry before re-sorting layout matrix
                 allLogs.push(data.logEntry);
                 renderLeaderboard();
                 if (map !== null) {
@@ -172,7 +180,6 @@
             loadSavedIdentity();
         }
 
-        // Helper helper to calculate race elapsed time strings from logs
         function getElapsedTimeStr(logTimestamp) {
             if (!raceStartTime) return "00:00:00";
             const elapsed = logTimestamp - raceStartTime;
@@ -207,8 +214,13 @@
         }
 
         function switchView(view) {
-            ['runner-view', 'leaderboard-view', 'map-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
-            document.getElementById(`${view}-view`).classList.remove('hidden');
+            ['runner-view', 'leaderboard-view', 'map-view'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
+            const target = document.getElementById(`${view}-view`);
+            if (target) target.classList.remove('hidden');
+            
             if (view === 'map') initMap();
         }
 
@@ -335,10 +347,48 @@
                 const tr = document.createElement('tr');
                 tr.className = index === 0 ? "bg-amber-50/70 font-medium" : "hover:bg-slate-50";
                 
-                // Fetch beautifully calculated elapsed duration string
                 const elapsedClock = getElapsedTimeStr(runner.timestamp);
 
                 tr.innerHTML = `
                     <td class="py-3 pl-2 font-bold text-slate-500">${index + 1}</td>
                     <td class="py-3 font-semibold text-slate-900">${runner.firstName} ${runner.lastName}</td>
-                    <td class="py-3 text-center font-mono font-bold text-emerald
+                    <td class="py-3 text-center font-mono font-bold text-emerald-800">Mile ${runner.mile}</td>
+                    <td class="py-3 text-center font-mono text-slate-600">${elapsedClock}</td>
+                    <td class="py-3 text-right font-mono font-bold pr-2 text-slate-950">${runner.time}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('submit-report-btn').addEventListener('click', async () => {
+            const firstName = document.getElementById('first-name').value.trim();
+            const lastName = document.getElementById('last-name').value.trim();
+            const checkpointId = document.getElementById('checkpoint-selector').value;
+
+            if (!firstName || !lastName) {
+                alert('Please enter your First and Last name before submitting data.');
+                return;
+            }
+
+            localStorage.setItem('tg200_firstName', firstName);
+            localStorage.setItem('tg200_lastName', lastName);
+
+            const res = await fetch('/api/report', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ firstName, lastName, checkpointId })
+            });
+
+            const reply = await res.json();
+            if (res.ok) {
+                document.getElementById('report-success-banner').classList.remove('hidden');
+                loadSavedIdentity();
+            } else {
+                alert(reply.error || 'Failed to file your report status updates.');
+            }
+        });
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
